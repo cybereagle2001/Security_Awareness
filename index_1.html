@@ -257,42 +257,99 @@
     const touch = navigator.maxTouchPoints > 0 ? `Yes (${navigator.maxTouchPoints} points)` : 'No';
     document.getElementById('misc').innerText = `${navigator.language} | Touch: ${touch}`;
 
-    // --- 2. NETWORK & IP DATA (With Fallbacks) ---
+    // --- 2. NETWORK & IP DATA (Robust Fallback Chain) ---
     async function fetchNetworkData() {
         const ipEl = document.getElementById('ip');
         const geoEl = document.getElementById('geo');
         const ispEl = document.getElementById('isp');
         const tzEl = document.getElementById('timezone');
 
-        try {
-            // Primary API: ipwhois.app (Free, HTTPS, no CORS issues, highly reliable)
-            const response = await fetch('https://ipwhois.app/json/');
-            if (!response.ok) throw new Error('Primary API failed');
-            const data = await response.json();
-            
-            if (data.success === false) throw new Error('API returned false');
+        // List of Geo/IP APIs to try in order
+        const apis = [
+            {
+                url: 'https://ipwho.is/',
+                parse: (data) => ({
+                    ip: data.ip,
+                    city: data.city,
+                    region: data.region,
+                    country: data.country,
+                    isp: data.connection?.org || data.connection?.isp || 'Unavailable',
+                    tz: data.timezone?.id || 'Unavailable'
+                })
+            },
+            {
+                url: 'https://ipapi.co/json/',
+                parse: (data) => ({
+                    ip: data.ip,
+                    city: data.city,
+                    region: data.region,
+                    country: data.country_name,
+                    isp: data.org || 'Unavailable',
+                    tz: data.timezone || 'Unavailable'
+                })
+            }
+        ];
 
-            ipEl.innerText = data.ip;
-            geoEl.innerText = `${data.city}, ${data.region}, ${data.country}`;
-            ispEl.innerText = data.isp || data.org || 'Unavailable';
-            tzEl.innerText = data.timezone?.id || 'Unavailable';
-        } catch (error) {
-            console.warn('Primary API failed, trying fallback...', error);
+        // Try each Geo API with a 3-second timeout
+        for (const api of apis) {
             try {
-                // Fallback API: ipapi.co
-                const response2 = await fetch('https://ipapi.co/json/');
-                const data2 = await response2.json();
-                ipEl.innerText = data2.ip;
-                geoEl.innerText = `${data2.city}, ${data2.region}, ${data2.country_name}`;
-                ispEl.innerText = data2.org || 'Unavailable';
-                tzEl.innerText = data2.timezone;
-            } catch (e) {
-                ipEl.innerText = 'Blocked / Unavailable';
-                geoEl.innerText = 'Unavailable';
-                ispEl.innerText = 'Unavailable';
-                tzEl.innerText = 'Unavailable';
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000); 
+
+                const response = await fetch(api.url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) continue;
+                
+                const rawData = await response.json();
+                const data = api.parse(rawData);
+
+                ipEl.innerText = data.ip;
+                geoEl.innerText = `${data.city}, ${data.region}, ${data.country}`;
+                ispEl.innerText = data.isp;
+                tzEl.innerText = data.tz;
+                
+                return; // Success, exit the function
+            } catch (error) {
+                console.warn(`API ${api.url} failed:`, error.message);
+                continue; // Try next API
             }
         }
+
+        // --- FALLBACK: If all Geo APIs are blocked (e.g., by AdBlock) ---
+        // Try to at least fetch the raw IP using highly trusted domains that adblockers rarely block
+        const rawIpApis = [
+            'https://api.ipify.org?format=json', // Returns JSON
+            'https://checkip.amazonaws.com'      // Returns plain text (AWS domain, very rarely blocked)
+        ];
+
+        for (const rawApi of rawIpApis) {
+            try {
+                const response = await fetch(rawApi);
+                let rawIp = '';
+                
+                if (rawApi.includes('ipify')) {
+                    const data = await response.json();
+                    rawIp = data.ip;
+                } else {
+                    rawIp = (await response.text()).trim();
+                }
+
+                ipEl.innerText = rawIp;
+                geoEl.innerText = 'Hidden by Ad-blocker';
+                ispEl.innerText = 'Hidden by Ad-blocker';
+                tzEl.innerText = 'Hidden by Ad-blocker';
+                return; // Success
+            } catch (e) {
+                continue;
+            }
+        }
+
+        // Absolute failure
+        ipEl.innerText = 'Network Error / Strict Adblock';
+        geoEl.innerText = 'Unavailable';
+        ispEl.innerText = 'Unavailable';
+        tzEl.innerText = 'Unavailable';
     }
 
     // --- 3. WEBRTC LOCAL IP LEAK DETECTION ---
@@ -307,7 +364,6 @@
                     resolve(Array.from(ips));
                     return;
                 }
-                // Regex to extract IP from candidate string
                 const match = e.candidate.candidate.match(/(\d{1,3}(\.\d{1,3}){3}|[a-f0-9]{1,4}(:[a-f0-9]{1,4}){7})/);
                 if (match) ips.add(match[1]);
             };
@@ -315,7 +371,6 @@
                 resolve([]);
             });
             
-            // Timeout in case it hangs
             setTimeout(() => {
                 pc.close();
                 resolve(Array.from(ips));
@@ -328,10 +383,10 @@
         const ips = await getLocalIPs();
         if (ips.length > 0) {
             el.innerText = ips.join(', ');
-            el.style.color = '#f87171'; // Highlight leak in red
+            el.style.color = '#f87171'; 
         } else {
             el.innerText = 'No Leak Detected (Secure)';
-            el.style.color = '#4ade80'; // Green for secure
+            el.style.color = '#4ade80'; 
         }
     }
 
