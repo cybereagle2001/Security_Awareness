@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Awareness Demonstration</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .container {
+            background-color: #1e293b;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #334155;
+        }
+        h1 {
+            color: #ef4444;
+            margin-top: 0;
+        }
+        .warning-box {
+            background-color: #7f1d1d;
+            border-left: 4px solid #f87171;
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+        th {
+            color: #38bdf8;
+            width: 30%;
+        }
+        .loading {
+            color: #94a3b8;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="warning-box">
+        <strong>Privacy Demonstration:</strong> This page simulates how malicious websites or passive trackers capture metadata about your device and location the moment you click a link.
+    </div>
+
+    <h1>Data Exposed Silently</h1>
+    <p>The following information was gathered automatically via your browser environment and public routing data:</p>
+
+    <table>
+        <tr>
+            <th>Public IP Address</th>
+            <td id="ip" class="loading">Fetching...</td>
+        </tr>
+        <tr>
+            <th>Estimated Location</th>
+            <td id="geo" class="loading">Fetching...</td>
+        </tr>
+        <tr>
+            <th>ISP / Provider</th>
+            <td id="isp" class="loading">Fetching...</td>
+        </tr>
+        <tr>
+            <th>Browser User-Agent</th>
+            <td id="user-agent">Loading...</td>
+        </tr>
+        <tr>
+            <th>Language & Platform</th>
+            <td id="platform">Loading...</td>
+        </tr>
+        <tr>
+            <th>Screen Resolution</th>
+            <td id="resolution">Loading...</td>
+        </tr>
+        <tr>
+            <th>Precise GPS Location</th>
+            <td id="gps">
+                <button onclick="requestGPS()">Request Browser GPS Permission</button>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<script>
+    // 1. Capture Browser/Device Metadata (Passive)
+    document.getElementById('user-agent').innerText = navigator.userAgent;
+    document.getElementById('platform').innerText = `${navigator.language} on ${navigator.platform}`;
+    document.getElementById('resolution').innerText = `${window.screen.width}x${window.screen.height} (${window.devicePixelRatio}x scaling)`;
+
+    // 2. Capture IP and Rough Geolocation via a Public API
+    async function fetchNetworkData() {
+        try {
+            // Using ipapi.co (free tier, no API key required for basic client-side demo)
+            const response = await fetch('https://ipapi.co/json/');
+            if (!response.ok) throw new Error('Network error');
+            
+            const data = await response.json();
+            
+            document.getElementById('ip').innerText = data.ip || 'Unavailable';
+            document.getElementById('geo').innerText = `${data.city}, ${data.region}, ${data.country_name}`;
+            document.getElementById('isp').innerText = data.org || 'Unavailable';
+        } catch (error) {
+            document.getElementById('ip').innerText = 'Blocked by Adblocker/Error';
+            document.getElementById('geo').innerText = 'Unavailable';
+            document.getElementById('isp').innerText = 'Unavailable';
+        }
+    }
+
+    // 3. Active Geolocation Request (Triggers Browser Permission Prompt)
+    function requestGPS() {
+        const gpsTd = document.getElementById('gps');
+        if (!navigator.geolocation) {
+            gpsTd.innerText = "Geolocation is not supported by this browser.";
+            return;
+        }
+
+        gpsTd.innerText = "Awaiting permission...";
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                const accuracy = position.coords.accuracy;
+                gpsTd.innerHTML = `<strong>Lat:</strong> ${lat.toFixed(5)}, <strong>Lon:</strong> ${lon.toFixed(5)} (~${Math.round(accuracy)}m accuracy)<br>
+                <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" style="color: #38bdf8;">View on Google Maps</a>`;
+            },
+            (error) => {
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        gpsTd.innerText = "Permission Denied by user (Good security practice!).";
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        gpsTd.innerText = "Location information is unavailable.";
+                        break;
+                    case error.TIMEOUT:
+                        gpsTd.innerText = "The request to get user location timed out.";
+                        break;
+                    default:
+                        gpsTd.innerText = "An unknown error occurred.";
+                }
+            }
+        );
+    }
+
+    // Initialize network data fetch on load
+    fetchNetworkData();
+</script>
+
+</body>
+</html>
